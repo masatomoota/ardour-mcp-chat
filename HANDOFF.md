@@ -2,6 +2,8 @@
 
 > **ABSTRACT (English, for any LLM picking this up cold):** This document is a complete, self-contained handoff for continuing work on the **Ardour MCP Companion** — a dedicated Electron desktop chat app that drives Ardour by natural language via the MCP HTTP control surface running at `http://127.0.0.1:4820/mcp`. The app is the **client side** of the companion architecture; the **server side** lives at [masatomoota/ardour, branch `feature/mcp-fresh-macos`](https://github.com/masatomoota/ardour/tree/feature/mcp-fresh-macos). The two are deliberately **separate processes** so this client carries an MIT license (no GPL inheritance from Ardour). Repo state at handoff: 1 clean initial commit, 14 tracked files / ~2{,}770 LOC, statically verified, MCP client unit-tested, Electron launch sanity-passed. You do **not** need the originating chat. Prose is Japanese; code, paths, identifiers are English; every claim carries a `file:line` or commit citation. Start at §0, then §3 (quick start) or §6 (roadmap).
 
+> **See also:** project-wide master handoff at https://github.com/masatomoota/llm-daw-handoff (chronological narrative, decision tree, prioritized roadmap to 100%, auto-start protocol).
+
 ---
 
 ## 0. このドキュメントの使い方・前提
