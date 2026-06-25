@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ardour MCP Companion</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="header">
+      <div class="header-left">
+        <span class="app-title">Ardour MCP Companion</span>
+        <span id="status-dot" class="status-dot disconnected"></span>
+        <span id="status-label" class="status-label">Disconnected</span>
+      </div>
+      <div class="header-right">
+        <button id="reconnect-btn" class="btn btn-secondary" style="display:none">Reconnect</button>
+        <button id="connect-btn" class="btn btn-secondary">Connect</button>
+        <button id="clear-btn" class="btn btn-secondary" title="Clear conversation (Cmd/Ctrl+K)">Clear</button>
+        <button id="settings-btn" class="btn btn-icon" title="Settings (Cmd/Ctrl+,)">&#9881;</button>
+      </div>
+    </header>
+
+    <!-- Status tooltip -->
+    <div id="status-tooltip" class="status-tooltip" hidden></div>
+
+    <!-- System prompt peek -->
+    <details id="system-prompt-peek" class="system-prompt-peek">
+      <summary>System prompt</summary>
+      <pre id="system-prompt-text" class="system-prompt-text"></pre>
+    </details>
+
+    <main id="messages"></main>
+
+    <form id="composer">
+      <textarea id="input" placeholder="Ask Claude about your Ardour session… (Enter to send, Shift+Enter for newline)" rows="2"></textarea>
+      <button type="submit" id="send-btn" class="btn btn-primary">
+        <span id="send-label">Send</span>
+        <span id="send-spinner" class="spinner" hidden></span>
+      </button>
+    </form>
+  </div>
+
+  <!-- Settings dialog -->
+  <dialog id="settings-dialog">
+    <div class="dialog-header">
+      <h2>Settings</h2>
+      <button id="settings-close" class="btn btn-icon" title="Close">&times;</button>
+    </div>
+    <form id="settings-form" method="dialog">
+      <label>
+        Anthropic API Key
+        <div class="input-row">
+          <input type="password" id="cfg-api-key" placeholder="sk-ant-…" autocomplete="off" />
+          <button type="button" id="test-api-btn" class="btn btn-secondary">Test</button>
+        </div>
+        <span id="api-key-hint" class="field-hint"></span>
+      </label>
+      <label>
+        Model
+        <select id="cfg-model">
+          <option value="claude-sonnet-4-6">claude-sonnet-4-6 (default)</option>
+          <option value="claude-opus-4-8">claude-opus-4-8</option>
+          <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
+        </select>
+      </label>
+      <label>
+        MCP Endpoint
+        <div class="input-row">
+          <input type="text" id="cfg-mcp-url" placeholder="http://127.0.0.1:4820/mcp" />
+          <button type="button" id="test-mcp-btn" class="btn btn-secondary">Test</button>
+        </div>
+        <span id="mcp-url-hint" class="field-hint"></span>
+      </label>
+      <label>
+        System Prompt
+        <textarea id="cfg-system" rows="4"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="settings-save" class="btn btn-primary">Save</button>
+        <button type="button" id="settings-cancel" class="btn btn-secondary">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="lib/markdown.js" defer></script>
+  <script src="lib/ui.js" defer></script>
+  <script src="renderer.js" defer></script>
+</body>
+</html>

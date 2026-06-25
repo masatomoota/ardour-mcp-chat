@@ -1,0 +1,16 @@
+{
+  "name": "ardour-mcp-companion",
+  "version": "0.1.0",
+  "description": "Chat companion app that drives Ardour via MCP",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^42.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0"
+  }
+}
