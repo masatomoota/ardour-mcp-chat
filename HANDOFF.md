@@ -119,8 +119,8 @@ Ardour 側は別途起動が必要（masatomoota/ardour の `feature/mcp-fresh-m
 | `main.js` | 108 | Electron main: BrowserWindow 1200x800, IPC `llm-send`/`settings-{get,set}`, settings JSON at `app.getPath('userData')/settings.json` |
 | `preload.js` | 9 | contextBridge: `window.api = { llmSend, settingsGet, settingsSet }` |
 | `index.html` | 93 | DOM shell: header(status dot+settings)、`#messages`、`#composer`、`<dialog id=settings>` |
-| `styles.css` | 518 | Dark theme、message bubbles、collapsible tool cards、status dot、smooth scroll |
-| `renderer.js` | 751 | チャットUX一切（init, agent loop driver, message rendering, settings dialog, shortcut, persistence） |
+| `styles.css` | 603 | Dark theme、message bubbles、collapsible tool cards、status dot、smooth scroll、T11 チェックボックスグリッド |
+| `renderer.js` | 860 | チャットUX一切（init, agent loop driver, message rendering, settings dialog, shortcut, persistence、T11 ツール選別 UI） |
 | `lib/mcp-client.js` | 103 | `McpClient` class: `initialize()`, `listTools()`, `callTool(name, args)`, internal `request()`、純 fetch、第三者依存ゼロ |
 | `lib/agent-loop.js` | 157 | `AgentLoop` class: 会話履歴、`sendUser()` → tool_use ループ、`onEvent` イベント駆動、最大20反復 |
 | `lib/ui.js` | 239 | DOM ヘルパ（message bubble factory, tool card factory, syntax-highlight JSON, copy-to-clipboard）|
@@ -146,8 +146,9 @@ Ardour 側は別途起動が必要（masatomoota/ardour の `feature/mcp-fresh-m
 ## 6. 残作業ロードマップ
 
 ### 短期（v0.2 候補）
+- ✅ **UI 堅牢化**：IME Enter 誤送信修正、設定ダイアログ高さ制御、disabled 状態 finally 修正、バブル overflow-wrap、フォーカス管理（Wave Companion-UI、`a108538`）
+- ✅ **ツール選別 UI (T11)**：10 名前空間チェックボックス、Anthropic 呼び出し前フィルタ、「N/M tools enabled」カウンタ、All/None ボタン、disable-all フォールバック（`a108538` + `2eb6249`）
 - **接続自動再試行**：Ardour 起動中の sleep/wake やセッション切替で接続が切れたら自動 reconnect。
-- **ツール選別 UI**：96 全 tools を毎回送ると Anthropic 側で `system` トークン消費が大きい。カテゴリ（transport/track/region…）でフィルタ可能に。
 - **複数会話タブ**：左サイドバーで会話切替。
 - **エクスポート**：会話を Markdown / JSON に書き出し。
 
@@ -171,10 +172,12 @@ Ardour 側 `MCP_LLM_CONTROL_HANDOFF.md` の Phase 2（SSE/notifications）が実
 
 1. **Ardour 未起動時の UX**：Connect ボタンで ECONNREFUSED を出して赤ドット。エラーメッセージは出るが「次にどうすべきか」のヒントを充実させる余地あり（Phase 3 改善候補）。
 2. **Anthropic API レート制限**：rate_limit_error / overloaded_error を `lib/agent-loop.js` で検出して 1 回だけ自動再試行するロジックは入っている（指数バックオフ簡易版）。本格運用なら別途強化。
-3. **長文応答のクリッピング**：`max_tokens: 4096` 固定。プラグイン一覧 dump 等で切れる可能性。設定可能化が将来の追加項目。
+3. **長文応答のクリッピング**：`max_tokens: 4096` 固定。プラグイン一覧 dump 等で切れる可能性。設定可能化が将来の追加項目。T11 ツール選別 UI により必要なカテゴリのみ送信できるため、トークン問題は緩和された。
 4. **macOS の Quartz 描画**：`nohup` 等の TTY 無しバックグラウンド起動だと Electron ウィンドウが描画されない（Ardour 側でも同じ症状を確認）。普通に Finder / `npm start` で起動すれば OK。
 5. **マルチセッション**：1 つの Anthropic アカウント × 1 つの Ardour インスタンスを想定。同時に複数 Ardour を制御するには endpoint URL を会話単位に持つ拡張が必要。
 6. **`.env` ファイルの取り扱い**：本リポでは `.env` を `.gitignore` 済み。**絶対に git に入れない**こと。実装初版で誤って `.env` が一時的にコミットされたが、push 前に squash で完全除去済み（履歴に残っていない）。
+7. ~~**日本語 IME Enter 誤送信**~~：**FIXED** (`a108538`)。`renderer.js:836` に `!e.isComposing && e.keyCode !== 229` ガードを追加。CDP 実機テストで IME 変換 Enter が `defaultPrevented=false` になることを確認済み。
+8. ~~**設定ダイアログのダイアログ Save ボタン到達不能**~~：**FIXED** (`a108538`)。`styles.css:450` に `max-height: min(90vh, 780px)` + form 内部スクロール。1200x560 最小ウィンドウで Save ボタン到達可能を CDP 実測確認。
 
 ---
 
@@ -196,6 +199,7 @@ Ardour 側 `MCP_LLM_CONTROL_HANDOFF.md` の Phase 2（SSE/notifications）が実
 | `lib/mcp-client.js` 単体 | ✅ | ECONNREFUSED 時の例外パス確認、Ardour 起動時の serverInfo + 96 tools 取得は Wave 2 で実機確認済み |
 | Electron 起動 | ✅ | `npx electron .` が SIGTERM タイムアウトまでクラッシュなし |
 | git tree | ✅ | 14 tracked files、`.env` 履歴なし、`.gitignore` 完備 |
+| **CDP 実機テスト（Wave Companion-UI）** | ✅ | `--remote-debugging-port=9222` で起動、`Runtime.evaluate` で実レンダラ内アサーション実行。IME 変換 Enter: NO SEND（`defaultPrevented=false`）確認。設定ダイアログ: 1200x768 で `maxHeight=691.2px`、1200x560 最小ウィンドウで `maxHeight=504px` かつ Save ボタン到達可能。T11 チェックボックス: 10 個存在、All/None ボタン存在、flex-direction:row/text-transform:none 確認。 |
 
 ---
 
