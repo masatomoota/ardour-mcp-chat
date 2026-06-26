@@ -575,8 +575,12 @@ details#cfg-tools-section[open] .tools-section-summary::before { transform: rota
   padding: 8px 0 4px;
 }
 
-.tool-ns-checkbox {
+/* Scoped under #settings-form to outrank the generic `#settings-form label`
+   rule (id specificity), which otherwise forces flex-direction:column +
+   uppercase and stacks the checkbox above its label. */
+#settings-form .tool-ns-checkbox {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 6px;
   font-size: 12px;
