@@ -79,6 +79,19 @@
         System Prompt
         <textarea id="cfg-system" rows="4"></textarea>
       </label>
+      <details id="cfg-tools-section">
+        <summary class="tools-section-summary">
+          Tools
+          <span id="cfg-tools-count" class="tools-count"></span>
+        </summary>
+        <div id="cfg-tools-grid" class="tools-checkbox-grid">
+          <!-- populated by renderToolsSection() in renderer.js -->
+        </div>
+        <div class="tools-actions">
+          <button type="button" id="tools-all-btn"  class="btn btn-secondary">All</button>
+          <button type="button" id="tools-none-btn" class="btn btn-secondary">None</button>
+        </div>
+      </details>
       <div class="dialog-actions">
         <button type="button" id="settings-save" class="btn btn-primary">Save</button>
         <button type="button" id="settings-cancel" class="btn btn-secondary">Cancel</button>

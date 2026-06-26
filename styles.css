@@ -112,7 +112,9 @@ html, body {
   padding: 8px 12px;
   font-size: 12px;
   color: var(--fg-muted);
-  white-space: pre;
+  white-space: pre-wrap;        /* preserve newlines; allow wrap on long URLs */
+  overflow-wrap: break-word;    /* break unbreakable strings (IP/path URLs)   */
+  max-width: min(420px, 80vw); /* cap width so it cannot overflow the header */
   z-index: 100;
   pointer-events: none;
   box-shadow: 0 4px 16px rgba(0,0,0,0.5);
@@ -147,6 +149,8 @@ html, body {
   font-family: inherit;
   border-top: 1px solid var(--border);
   margin-top: 4px;
+  max-height: 120px; /* cap expanded peek so #messages is not crushed */
+  overflow-y: auto;
 }
 
 /* ---- Buttons ---- */
@@ -231,7 +235,8 @@ html, body {
 .msg-row.user .bubble { background: var(--user-bubble); border-bottom-right-radius: 3px; white-space: pre-wrap; }
 .msg-row.asst .bubble { background: var(--asst-bubble); border-bottom-left-radius: 3px; }
 .msg-row.sys  .bubble { background: var(--err-bg); border: 1px solid var(--err-border);
-                         color: #e08080; border-radius: 8px; font-size: 13px; white-space: pre-wrap; }
+                         color: #e08080; border-radius: 8px; font-size: 13px;
+                         white-space: pre-wrap; overflow-wrap: break-word; }
 
 /* ---- Markdown rendered bubble ---- */
 
@@ -319,7 +324,14 @@ html, body {
 .tool-status-dot.ok      { background: var(--dot-ok); }
 .tool-status-dot.error   { background: var(--dot-err); }
 
-.tool-name { color: #7ec8a0; font-weight: 600; white-space: nowrap; }
+.tool-name {
+  color: #7ec8a0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 30%; /* prevents very long tool names from pushing status/chevron off-screen */
+}
 
 .tool-args-summary {
   color: #888;
@@ -418,7 +430,8 @@ html, body {
   padding: 8px 12px;
   outline: none;
   transition: border-color 0.15s;
-  overflow-y: auto;
+  overflow-y: hidden; /* JS auto-grow handler switches to auto when capped */
+  max-height: 168px;  /* CSS-side cap matches JS-side 168px limit          */
 }
 #input:focus { border-color: var(--accent-dim); }
 #input::placeholder { color: var(--fg-muted); }
@@ -434,7 +447,11 @@ dialog {
   color: var(--fg);
   padding: 0;
   width: min(560px, 92vw);
+  max-height: min(90vh, 780px);
   box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  /* Flex column so header+actions stay pinned while the form scrolls */
+  display: flex;
+  flex-direction: column;
 }
 dialog::backdrop { background: rgba(0,0,0,0.55); }
 
@@ -444,6 +461,7 @@ dialog::backdrop { background: rgba(0,0,0,0.55); }
   justify-content: space-between;
   padding: 16px 20px 12px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0; /* stays pinned while form scrolls */
 }
 .dialog-header h2 { font-size: 16px; font-weight: 600; }
 
@@ -452,6 +470,9 @@ dialog::backdrop { background: rgba(0,0,0,0.55); }
   flex-direction: column;
   gap: 16px;
   padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0; /* required for flex child to honour overflow */
 }
 
 #settings-form label {
@@ -510,9 +531,69 @@ dialog::backdrop { background: rgba(0,0,0,0.55); }
   gap: 8px;
   justify-content: flex-end;
   padding-top: 4px;
+  /* When dialog-actions is inside #settings-form it scrolls with the form
+     which is the simplest behaviour. If it needs to be truly pinned,
+     move the div outside the <form> in index.html and add flex-shrink:0 here. */
 }
 
 /* ---- Scrollbar ---- */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ---- T11: Tool namespace filter (settings dialog) ---- */
+
+.tools-section-summary {
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  padding: 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none; /* hide default triangle in Safari */
+  user-select: none;
+}
+.tools-section-summary::-webkit-details-marker { display: none; }
+.tools-section-summary::before { content: '▸'; font-size: 10px; transition: transform 0.15s; }
+details#cfg-tools-section[open] .tools-section-summary::before { transform: rotate(90deg); }
+
+.tools-count {
+  font-size: 11px;
+  color: var(--accent);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: normal;
+}
+
+.tools-checkbox-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+
+.tool-ns-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg);
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.tool-ns-checkbox input[type="checkbox"] { accent-color: var(--accent); }
+
+.ns-count {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.tools-actions {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0 8px;
+}

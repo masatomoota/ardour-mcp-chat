@@ -83,14 +83,15 @@ class McpClient {
 const MAX_ITER = 20;
 
 class AgentLoop {
-  constructor({ llmClient, mcpClient, model, systemPrompt, onEvent }) {
-    this.llmClient    = llmClient;
-    this.mcpClient    = mcpClient;
-    this.model        = model || 'claude-sonnet-4-6';
-    this.systemPrompt = systemPrompt || '';
-    this.onEvent      = onEvent || (() => {});
-    this.messages     = [];
-    this._tools       = null;
+  constructor({ llmClient, mcpClient, model, systemPrompt, onEvent, enabledNamespaces }) {
+    this.llmClient        = llmClient;
+    this.mcpClient        = mcpClient;
+    this.model            = model || 'claude-sonnet-4-6';
+    this.systemPrompt     = systemPrompt || '';
+    this.onEvent          = onEvent || (() => {});
+    this.enabledNamespaces = enabledNamespaces || null; // null = pass all
+    this.messages         = [];
+    this._tools           = null;
   }
 
   mapMcpToolToAnthropic(t) {
@@ -105,7 +106,8 @@ class AgentLoop {
     if (this._tools) return this._tools;
     try {
       const raw = await this.mcpClient.listTools();
-      this._tools = raw.map((t) => this.mapMcpToolToAnthropic(t));
+      const all = raw.map((t) => this.mapMcpToolToAnthropic(t));
+      this._tools = filterToolsByNamespaces(all, this.enabledNamespaces);
     } catch (_) { this._tools = []; }
     return this._tools;
   }
@@ -205,10 +207,11 @@ let settings = {
   systemPrompt: DEFAULT_SYSTEM,
 };
 
-let mcpClient  = null;
-let toolCount  = 0;
-let mcpServerInfo = null;
-let inFlight   = false;
+let mcpClient        = null;
+let toolCount        = 0;
+let mcpServerInfo    = null;
+let inFlight         = false;
+let lastKnownRawTools = []; // populated after successful connectMcp(); used by T11 UI
 
 // Map tool_use id -> DOM card element
 const toolCards = new Map();
@@ -241,6 +244,84 @@ const llmClient = {
     return window.api.llmSend(payload);
   },
 };
+
+// ---------------------------------------------------------------------------
+// T11 — Tool namespace filter
+// ---------------------------------------------------------------------------
+const NAMESPACE_MAP = [
+  { key: 'transport',   label: 'Transport',   match: t => t.name.startsWith('transport_') },
+  { key: 'track',       label: 'Track',        match: t => t.name.startsWith('track_') || t.name.startsWith('tracks_') },
+  { key: 'region',      label: 'Regions',      match: t => t.name.startsWith('region_') },
+  { key: 'markers',     label: 'Markers',      match: t => t.name.startsWith('markers_') },
+  { key: 'session',     label: 'Session',      match: t => t.name.startsWith('session_') },
+  { key: 'plugin',      label: 'Plugins',      match: t => t.name.startsWith('plugin_') },
+  { key: 'automation',  label: 'Automation',   match: t => t.name.startsWith('automation_') },
+  { key: 'midi',        label: 'MIDI',         match: t => t.name.startsWith('midi_') },
+  { key: 'buses',       label: 'Buses',        match: t => t.name.startsWith('buses_') },
+  { key: 'diagnostics', label: 'Diagnostics',  match: t => t.name === 'hello_world' },
+];
+
+/**
+ * Returns tools filtered to enabled namespaces.
+ * When enabledKeys is null/empty the full list is returned (safe fallback).
+ * Tools whose name does not match any namespace are always passed through.
+ */
+function filterToolsByNamespaces(tools, enabledKeys) {
+  if (!enabledKeys || enabledKeys.length === 0) return tools;
+  const enabled = new Set(enabledKeys);
+  return tools.filter(t => {
+    for (const ns of NAMESPACE_MAP) {
+      if (ns.match(t)) return enabled.has(ns.key);
+    }
+    return true; // unknown prefix — always pass through
+  });
+}
+
+function renderToolsSection() {
+  const grid = document.getElementById('cfg-tools-grid');
+  if (!grid) return;
+  const allKeys = NAMESPACE_MAP.map(n => n.key);
+  const enabled = new Set(settings.enabledNamespaces && settings.enabledNamespaces.length > 0
+    ? settings.enabledNamespaces
+    : allKeys);
+  grid.innerHTML = '';
+  for (const ns of NAMESPACE_MAP) {
+    const count = lastKnownRawTools.filter(t => ns.match(t)).length;
+    const label = document.createElement('label');
+    label.className = 'tool-ns-checkbox';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.ns = ns.key;
+    cb.checked = enabled.has(ns.key);
+    cb.addEventListener('change', updateToolsCount);
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(` ${ns.label} `));
+    const countSpan = document.createElement('span');
+    countSpan.className = 'ns-count';
+    countSpan.textContent = `(${count})`;
+    label.appendChild(countSpan);
+    grid.appendChild(label);
+  }
+  updateToolsCount();
+  const allBtn  = document.getElementById('tools-all-btn');
+  const noneBtn = document.getElementById('tools-none-btn');
+  if (allBtn)  allBtn.onclick  = () => { grid.querySelectorAll('input').forEach(cb => { cb.checked = true;  }); updateToolsCount(); };
+  if (noneBtn) noneBtn.onclick = () => { grid.querySelectorAll('input').forEach(cb => { cb.checked = false; }); updateToolsCount(); };
+}
+
+function updateToolsCount() {
+  const countEl = document.getElementById('cfg-tools-count');
+  if (!countEl) return;
+  const checked = [...document.querySelectorAll('#cfg-tools-grid input[type="checkbox"]:checked')].map(cb => cb.dataset.ns);
+  const enabledCount = filterToolsByNamespaces(lastKnownRawTools, checked).length;
+  const total = lastKnownRawTools.length;
+  countEl.textContent = total > 0
+    ? `${enabledCount} / ${total} tools enabled`
+    : '(connect first)';
+  if (checked.length === 0 && total > 0) {
+    countEl.textContent += ' — warning: all tools will be sent (disable-all fallback)';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Status / tooltip
@@ -409,9 +490,10 @@ async function connectMcp() {
     const client = new McpClient(url);
     const initResult = await client.initialize();
     const tools = await client.listTools();
-    mcpClient     = client;
-    toolCount     = tools.length;
-    mcpServerInfo = initResult.serverInfo || null;
+    mcpClient        = client;
+    toolCount        = tools.length;
+    mcpServerInfo    = initResult.serverInfo || null;
+    lastKnownRawTools = tools;
     setStatus('connected', `Connected — ${toolCount} tools`);
     $connectBtn.textContent = 'Reconnect';
     updateTooltip();
@@ -439,16 +521,18 @@ async function sendMessage() {
 
   if (!settings.apiKey) {
     appendSystemMsg('Set API key in Settings before sending messages.');
+    $input.focus();
     return;
   }
 
   if (!mcpClient) {
     appendSystemMsg('Not connected to Ardour. Click Connect first.');
+    $input.focus();
     return;
   }
 
-  $input.value = '';
-  $input.style.height = '';
+  $input.value = '';  // clear content first so scrollHeight is 0
+  $input.dispatchEvent(new Event('input')); // reset height via auto-grow handler
 
   appendBubble('user', text);
   convLog.push({ role: 'user', content: text });
@@ -462,23 +546,25 @@ async function sendMessage() {
   const loop = new AgentLoop({
     llmClient,
     mcpClient,
-    model:        settings.model,
-    systemPrompt: settings.systemPrompt,
+    model:             settings.model,
+    systemPrompt:      settings.systemPrompt,
+    enabledNamespaces: settings.enabledNamespaces || null,
     onEvent,
   });
 
-  await loop.sendUser(text);
-
-  // Commit final assistant text to log
-  if (currentAsstText) {
-    convLog.push({ role: 'asst', content: currentAsstText });
-    persistConv();
+  try {
+    await loop.sendUser(text);
+    // Commit final assistant text to log
+    if (currentAsstText) {
+      convLog.push({ role: 'asst', content: currentAsstText });
+      persistConv();
+    }
+  } finally {
+    currentAsstBubble = null;
+    currentAsstText   = '';
+    setInFlight(false);
+    $input.focus();
   }
-  currentAsstBubble = null;
-  currentAsstText   = '';
-
-  setInFlight(false);
-  $input.focus();
 }
 
 function setInFlight(v) {
@@ -513,11 +599,14 @@ function openSettings() {
   $cfgSystem.value  = settings.systemPrompt || '';
   $apiKeyHint.textContent = '';
   $mcpUrlHint.textContent = '';
+  renderToolsSection();
   $settingsDialog.showModal();
+  $cfgApiKey.focus();
 }
 
 function closeSettings() {
   $settingsDialog.close();
+  $input.focus();
 }
 
 function validateSettings() {
@@ -560,6 +649,13 @@ async function saveSettings() {
   settings.model        = $cfgModel.value;
   settings.mcpUrl       = $cfgMcpUrl.value.trim() || 'http://127.0.0.1:4820/mcp';
   settings.systemPrompt = $cfgSystem.value || DEFAULT_SYSTEM;
+
+  // T11: persist enabled tool namespaces
+  const checkedBoxes = document.querySelectorAll('#cfg-tools-grid input[type="checkbox"]:checked');
+  if (checkedBoxes.length > 0) {
+    settings.enabledNamespaces = [...checkedBoxes].map(cb => cb.dataset.ns);
+  }
+  // If grid does not exist yet (no tools connected) leave enabledNamespaces untouched.
 
   await window.api.settingsSet(settings);
   updateSystemPromptPeek();
@@ -642,6 +738,10 @@ function updateSystemPromptPeek() {
 // ---------------------------------------------------------------------------
 function wireKeyboardShortcuts() {
   document.addEventListener('keydown', (e) => {
+    // Suppress all global shortcuts while the settings modal is open so that
+    // Cmd+Enter, Cmd+K, and Cmd+, do not fire through the modal backdrop.
+    if ($settingsDialog.open) return;
+
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
 
@@ -727,7 +827,13 @@ async function init() {
 
   // Enter = send; Shift+Enter = newline; Cmd/Ctrl+Enter handled by global shortcut
   $input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+    // Guard: do NOT send while an IME composition is in progress.
+    // e.isComposing is false once the IME has committed the text,
+    // so the *second* Enter (the one that actually submits) goes through.
+    // e.keyCode === 229 is a belt-and-suspenders guard for older WebKit
+    // builds that do not set isComposing reliably on the closing Enter.
+    if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey
+        && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault();
       sendMessage();
     }
@@ -736,7 +842,10 @@ async function init() {
   // Auto-grow textarea (max 8 lines ≈ 8 * 21px = 168px)
   $input.addEventListener('input', () => {
     $input.style.height = 'auto';
+    const capped = $input.scrollHeight > 168;
     $input.style.height = Math.min($input.scrollHeight, 168) + 'px';
+    // Only show scroll when capped — avoids phantom scrollbar at short content.
+    $input.style.overflowY = capped ? 'auto' : 'hidden';
   });
 
   wireTooltip();
